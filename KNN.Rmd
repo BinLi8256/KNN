@@ -1,0 +1,218 @@
+---
+title: "K-Nearest Neighbors"
+author: "Bin Li"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### Review of KNN
+
+
+K- Nearest Neighbor is a simple algorithm which predicts observations based on 'similarity', i.e. distance between observations. It's intuitive and generates accurate but unstable predictions.   
+<br>
+
+Unlike other ML algorithms, KNN does not have a loss function or closed-form model. It is a non-parametric method and does not impose assumptions on observations. It can be used for both regression and classification problems. For regression problem, the prediction is the mean of the K data points. For classification, the majority vote is the final prediction. 
+<br>
+
+
+Following is the pseudo-code for KNN:      
+<br>
+1. Import dataset  
+2. Choose the value of K  
+3. For each data point:  
+      (1) find the distance to all training data samples  
+      (2) store the distances on an ordered list and sort it  
+      (3) choose the top K entries from the sorted list  
+      (4) for regression, calculate the mean in the selected points as the prediction of the test point; for classification, label the test point based on the majority votes in the selected points    
+4. End  
+
+<br>
+
+There are several distance metrics used in KNN. For example, Euclidean distance, Manhattan distance, Hamming distance, and Minkowski distance. Euclidean distance is widely and commonly used among all of them. 
+<br>
+
+The following example uses diamonds dataset in ggplot2 to perform KNN algorithm. It will use price as our target.  
+<br>
+
+The dataset contains diamond price and other variables including carat, cut, color, clarity, x (length), y (width), z (depth), depth (total depth percentage), and table (width of top of diamond relative to widest point). There are 53940 observations in total.
+<br>
+
+#### Example
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(rsample)
+library(caret)
+```
+
+**1. Overview of the dataset**
+<br>
+```{r}
+head(diamonds)
+str(diamonds)
+```
+<br>
+
+**2. Extract Features and Response**
+<br>
+```{r}
+X = subset(diamonds, select = -price)
+y = diamonds$price
+```
+<br>
+
+**3. Data Pre-Processing **
+<br>
+
+Euclidean distance is more sensitive to outliers because of the squared term in the equation. And most distance measures are sensitive to the sale of features.   
+<br>
+
+It is important to scale the features to avoid bias caused by different scales. Besides, all categorical features should be represnted numerically.
+<br>
+
+Irrelevant and noisy features may cause variable distance values to similar samples. It's better to remove them to make KNN more stable.  
+<br>
+
+1. Change categorical variables to numeric values    
+
+There are three categorical variables needed to change into numeric values.
+
+```{r}
+X[, 2] = as.numeric(as.factor(unlist(X[,2])))
+X[, 3] = as.numeric(as.factor(unlist(X[,3])))
+X[, 4] = as.numeric(as.factor(unlist(X[,4])))
+                       
+head(X)
+
+```
+<br>
+
+2. Scale X features    
+
+Scale all the features in the dataset. 
+```{r}
+scale_X = X %>% mutate_all(~(scale(.) %>% as.vector))
+head(scale_X)
+```
+<br>
+
+3. Check zero-variance variables   
+
+Check if there is any irrelevant features. The result shows there is no non-zero variance features in the dataset.  
+
+```{r}
+nzv <- nearZeroVar(X)
+nzv
+```
+<br>
+
+4. Training and test set  
+
+Split the dataset into training and test set by slpit ratio 7:3.
+
+```{r}
+set.seed(1)  
+ind <- sample(1:nrow(X),size = nrow(X)*0.7,replace = FALSE)
+
+X_train = X[ind, ]
+X_test = X[-ind, ]
+
+y_train = y[ind]
+y_test = y[-ind]
+
+```
+<br>
+
+**Fit Model**
+<br>
+
+1.Grid search on K
+<br>
+
+A grid search on K aims to find an optimal value of K. The candidates range from 1 to 15. Without any doubt, K = 1 has the smallest training RMSE and MAPE. Training RMSE and MAPE increase as K becomes larger here. To avoid overfitting at the same time, a potential good value for K could be around 5. So, we can use 5 as the optimal K in this example.  
+
+```{r}
+train_RMSE = as.data.frame(matrix(rep(NA, 45), nrow = 15, ncol = 3))
+colnames(train_RMSE) = c('K', 'Training_RMSE', 'Training_MAPE')
+
+for (i in 1:15){
+  knn <-  knnreg(X_train, y_train, k = i)
+  fitted = predict(knn, X_train)
+  train_RMSE[i, 1] = i
+  train_RMSE[i, 2] = RMSE(fitted, y_train)
+  train_RMSE[i, 3] = round(100 * abs(mean((y_train - fitted)/y_train)), 2)
+  
+  
+}
+
+
+train_RMSE
+
+plot(train_RMSE$Training_RMSE,
+     main = 'Training RMSE for K',
+     xlab = 'K',
+     ylab = 'Training RMSE')
+
+plot(train_RMSE$Training_MAPE,
+     main = 'Training MAPE for K',
+     xlab = 'K',
+     ylab = 'Training MAPE')
+```
+<br>
+
+2. Model with optimal K  
+
+Fit the KNN with K = 5 on training set and make predictions on test set. The test RMSE is about 873.264, meaning the predicted price is biased by 873.264 to the true price, on average. The MAPE is about 3.15% indicating the difference in percentage between actual and prediction is around 3.15% on average.
+
+```{r}
+
+knn5 <-  knnreg(X_train, y_train, k = 5)
+fitted = predict(knn5, X_train)
+pred = predict(knn5, X_test)
+
+test_RMSE = RMSE(pred, y_test)
+test_RMSE 
+test_MAPE = round(100 * abs(mean((y_test - pred)/y_test)), 2)
+test_MAPE
+```
+<br>
+
+3. Visualize actual and pred values
+
+```{r}
+
+plot(y_test, pred,
+     main = 'actual and pred plot',
+     ylab = 'prediction',
+     xlab = 'actual',
+     col = 'darkgrey')
+abline(coef = c(0,1), col = 'red')
+grid()
+
+
+```
+<br>
+
+
+#### Pros and Cons of K-Nearest Neighbors
+
++ Pros: It is accurate and make no assumptions about the target variable. It's simple, intuitive, and easy to implement.
+<br>
++ Cons: There is no closed form formula. And it is unstable and can be time-consuming.
+<br>
+<br>
+<br>
+<br>
+<br>
+
+
+
+
+
+
+
+
